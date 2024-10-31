@@ -81,6 +81,7 @@ def make_variation_heatmap_temperature(csv_path):
     # This path has been found with the function get_closer_point_from_shape_centroid
     df = pd.read_csv(csv_path)
     
+    # Take only the temperature
     df = df[["date", "temperature_2m_mean"]]
 
 
@@ -124,10 +125,44 @@ def make_variation_heatmap_temperature(csv_path):
     heatmap.set_ylabel("Decade")
   
     plt.show()
+    
+
+def density_plot_tempereature(csv_path):
+
+    df = pd.read_csv(csv_path)
+
+    # Take only the temperature
+    df = df[["date", "temperature_2m_mean"]]
+
+    # Convert "date" to datetime and filter out 2050
+    df["date"] = pd.to_datetime(df["date"])
+    df = df[df["date"].dt.year <2040]
+
+    df.set_index("date", inplace=True)
+    df = df.resample("YE").mean()
+
+    # Create period of 30 years
+    df["30y_period_start"] = (df.index.year // 30) * 30
+    df["30y_period_end"] = df["30y_period_start"] + 29
+    df["30y_period"] = df["30y_period_start"].astype(str) + "-" + df["30y_period_end"].astype(str)
+
+    unique_periods = df["30y_period"].unique()
+    plt.figure(figsize=(10, 6))
+
+    for period in unique_periods:
+        period_data = df[df["30y_period"] == period]["temperature_2m_mean"]
+        sns.kdeplot(period_data, label=period, fill=True, bw_adjust=2)  # Adjust `bw_adjust` for smoothness
+
+    plt.xlabel("Temperature (°C)")
+    plt.ylabel("Density")
+    plt.title("KDE Plot of Temperature Distributions for Each 30-Year Period")
+    plt.legend(title="30-Year Period")
+    plt.show()
 
 
 
 
 if "__main__":
     csv_path = csv_path = "cmip6_era5_data_daily_53.csv"
-    make_variation_heatmap_temperature(csv_path)
+    # make_variation_heatmap_temperature(csv_path)
+    density_plot_tempereature(csv_path)
