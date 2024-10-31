@@ -7,6 +7,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import seaborn as sns
 from shapely import Point
+import mplcursors
 
 
 def find_nearest(tree, gdf, lat, lon, ax, fig):
@@ -125,7 +126,7 @@ def make_variation_heatmap_temperature(csv_path):
     heatmap.set_ylabel("Decade")
   
     plt.show()
-    
+
 
 def density_plot_tempereature(csv_path):
 
@@ -160,9 +161,79 @@ def density_plot_tempereature(csv_path):
     plt.show()
 
 
+def make_variability_month_variability_decade(csv_path):
+    
+    # This path has been found with the function get_closer_point_from_shape_centroid
+    df = pd.read_csv(csv_path)
+    
+    # Take only the temperature
+    df = df[["date", "temperature_2m_mean"]]
+
+
+    # Convert "date" to datetime and filter out 2050
+    df["date"] = pd.to_datetime(df["date"])
+    df = df[df["date"].dt.year <2020]
+
+    df["decade_start"] = (df["date"].dt.year // 10) * 10
+    df["decade_end"] = df["decade_start"] + 9
+    df["decade"] = df["decade_start"].astype(str) + "-" + df["decade_end"].astype(str)
+
+
+    # Extract month
+    df["month"] = df["date"].dt.month
+    df["year"] = df["date"].dt.year
+
+    # Overall and decade-specific monthly averages
+    overall_monthly_mean = df.groupby("month")["temperature_2m_mean"].mean()
+    overall_monthly_mean= pd.DataFrame(overall_monthly_mean)
+    year_month_data = df.groupby(["decade", "year", "month"]).agg({"temperature_2m_mean": "mean"}).reset_index()
+    
+    # Merge both of them and make the difference
+    year_month_data = year_month_data.merge(overall_monthly_mean, on="month", suffixes=("_year", "_overall"))
+    year_month_data.to_csv("test.csv")
+
+    # Create the plot
+    plt.figure(figsize=(10, 6))
+    sns.scatterplot(
+        data=year_month_data, x='month', y='temperature_2m_mean_year', 
+        hue='decade', palette='plasma_r', s=100, picker=True 
+    )
+
+    sns.lineplot(data=overall_monthly_mean, x="month", y="temperature_2m_mean", color="green", picker=False )
+    month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    plt.xticks(ticks=range(1, 13), labels=month_labels)
+
+    # Add hover functionality
+    cursor = mplcursors.cursor(hover=True)
+
+    
+    @cursor.connect("add")
+    def on_add(sel):
+        if sel.index in year_month_data['year']:
+            sel.annotation.set(
+                text=f"Temperature: {round(year_month_data['temperature_2m_mean_year'][sel.index], 2)}\nYear: {year_month_data['year'][sel.index]} °C",
+                multialignment="center",
+                )
+            sel.annotation.arrow_patch.set_visible(False) 
+            sel.annotation.get_bbox_patch().set(fc="white", alpha=.9)
+    
+        else :
+            # Here you can choose what information to show for the line plot.
+            sel.annotation.set(text="Temperature trend line", horizontalalignment="center", verticalalignment="center")  # Example text for the line
+            sel.annotation.arrow_patch.set_visible(False) 
+            sel.annotation.get_bbox_patch().set(fc="white", alpha=.9)
+    # Labels and title
+    plt.xlabel("Month")
+    plt.ylabel("Temperature (°C)")
+    plt.title("Mean Temperature per Month, Colored by Decade")
+    plt.show()
+
+
+
 
 
 if "__main__":
     csv_path = csv_path = "cmip6_era5_data_daily_53.csv"
     # make_variation_heatmap_temperature(csv_path)
-    density_plot_tempereature(csv_path)
+    # density_plot_tempereature(csv_path)
+    make_variability_month_variability_decade(csv_path)
