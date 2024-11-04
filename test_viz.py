@@ -163,6 +163,8 @@ def density_plot_tempereature(csv_path):
 
 def make_variability_month_variability_decade(csv_path):
     
+
+    # Maybe we will have to see later if it is possible to smooth the curve of the plot
     # This path has been found with the function get_closer_point_from_shape_centroid
     df = pd.read_csv(csv_path)
     
@@ -209,6 +211,14 @@ def make_variability_month_variability_decade(csv_path):
     
     @cursor.connect("add")
     def on_add(sel):
+        """
+        Handles the event triggered when a data point is selected on the plot.
+        Updates the annotation text and visual properties based on the selected index.
+
+        Args:
+            sel: The selection event object that provides the index of the selected data point 
+                and access to the annotation object for modification.
+        """
         if sel.index in year_month_data['year']:
             sel.annotation.set(
                 text=f"Temperature: {round(year_month_data['temperature_2m_mean_year'][sel.index], 2)}\nYear: {year_month_data['year'][sel.index]} °C",
@@ -226,6 +236,7 @@ def make_variability_month_variability_decade(csv_path):
     plt.xlabel("Month")
     plt.ylabel("Temperature (°C)")
     plt.title("Mean Temperature per Month, Colored by Decade")
+    plt.legend(reverse=True)
     plt.show()
 
 
