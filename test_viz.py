@@ -8,7 +8,10 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from shapely import Point
 import mplcursors
-
+from scipy.stats import linregress
+import matplotlib.cm as colormaps
+from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
 
 def find_nearest(tree, gdf, lat, lon, ax, fig):
     distances, indices = tree.query([lat, lon], k=1)  # Find nearest point
@@ -233,18 +236,180 @@ def make_variability_month_variability_decade(csv_path):
             sel.annotation.arrow_patch.set_visible(False) 
             sel.annotation.get_bbox_patch().set(fc="white", alpha=.9)
     # Labels and title
+    
     plt.xlabel("Month")
     plt.ylabel("Temperature (°C)")
     plt.title("Mean Temperature per Month, Colored by Decade")
     plt.legend(reverse=True)
     plt.show()
 
+def get_period_trend(df : pd.DataFrame, start, stop):
+
+    # Calculating the trend lines
+    df = df[(df.index > start) & (df.index < stop)]
+    years = df.index
+    annual_temperatures = df["temperature_2m_mean"]
+    slope, intercept, r_value, p_value, std_err = linregress(years,annual_temperatures)
+    print(slope)
+    # Create the trend line using the slope and intercept
+    trend_line = slope * years + intercept
+
+    return trend_line, years
 
 
+def build_trend_plot(year_temperature_average_df, periods):
+    cmap = plt.get_cmap('jet')
+    cmap_percent = np.linspace(0.3, 0.9, num=len(periods))
+    for i, period in enumerate(periods): 
+
+        start, end = period.split("-")
+        trend_line, years = get_period_trend(year_temperature_average_df, int(start), int(end))
+        plt.plot(years, trend_line, color=cmap(cmap_percent[i]), label=f"{period} Trend")
+
+def temperature_trends(csv_path):
+    df = pd.read_csv(csv_path)
+    
+    # Take only the temperature
+    df = df[["date", "temperature_2m_mean"]]
+
+
+    # Convert "date" to datetime and filter out 2050
+    df["date"] = pd.to_datetime(df["date"])
+    df = df[df["date"].dt.year<2050]
+    df["year"] = df["date"].dt.year
+    year_temperature_average_df = pd.DataFrame(df.groupby("year")["temperature_2m_mean"].mean())
+    year_temperature_average_df.to_csv("test.csv")
+
+    # Create the figure
+    plt.figure(figsize=(10, 6))
+    # Here I can make two loops to take build and then add to the graph the different plots, with the legend automatically
+    sns.lineplot(data=year_temperature_average_df, x="year", y="temperature_2m_mean", color="grey", label="Year Average Temperatures")
+    # trend_line, years = get_period_trend(year_temperature_average_df, 1950, 2050)
+    periods = ["1950-2050", "1970-2050", "1990-2050", "2010-2050"]
+    build_trend_plot(year_temperature_average_df, periods)
+    
+    plt.xlabel("Year")
+    plt.ylabel("Temperature (°C)")
+    # plt.ylim(year_temperature_average_df["temperature_2m_mean"].min()-1, year_temperature_average_df["temperature_2m_mean"].max()+1)
+    plt.title("Mean Year Temperature and trends from different periods")
+    plt.legend()
+    plt.show()
+
+def make_monthly_standard_deviation_over_years(csv_path):
+    df = pd.read_csv(csv_path)
+    
+    # Take only the temperature
+    df = df[["date", "temperature_2m_mean"]]
+
+
+    # Convert "date" to datetime and filter out 2050
+    df["date"] = pd.to_datetime(df["date"])
+    df = df[df["date"].dt.year<2020]
+
+    # Step 1: Filter the data to include only the years from 1990 to 2020
+    
+    filtered_data = df[(df['date'].dt.year >= 1990) & (df['date'].dt.year <= 2020)]
+    filtered_data["month"] = filtered_data["date"].dt.month
+
+    # Calculate the montly means temperature through the references years
+    monthly_means = filtered_data.groupby("month")["temperature_2m_mean"].mean()
+    df["month"] = df["date"].dt.month
+    df["year"] = df["date"].dt.year
+
+    # Put the corresponding averages faced to the right month for each year
+    df = df.merge(monthly_means.rename('monthly_mean'), on="month")
+    # Step 1: Calculate the difference from the monthly means
+    df['squared_diff'] = (df['temperature_2m_mean'] - df['monthly_mean'])**2
+    month_std = pd.DataFrame(df.groupby(["year","month"])["squared_diff"].mean() ** (1 / 2))
+    month_std = month_std.reset_index()
+   
+
+    pivot_table = month_std.pivot(index="year", columns="month", values="squared_diff")
+    pivot_table.columns = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+    # Create the figure
+    plt.figure(figsize=(10, 6))
+    month_labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+
+    conditions = [
+        (month_std['squared_diff'] < 1),
+        (month_std['squared_diff'] >= 1) & (month_std['squared_diff'] < 2),
+        (month_std['squared_diff'] >= 2) & (month_std['squared_diff'] < 3),
+        (month_std['squared_diff'] >= 3)
+    ]
+    size_categories = [50, 100, 200, 500]  # Corresponding sizes
+    month_std['size_category'] = np.select(conditions, size_categories)
+
+    color_labels = ["green", "gold", "darkorange","red"]
+    month_std['color'] = np.select(conditions, color_labels)
+
+
+    legends = ["SD < 1", "1 < SD < 2", "2 < SD < 3", "SD > 3"]
+    month_std["legend"]=np.select(conditions, legends)
+    month_std.to_csv("j.csv")
+
+    # Plot with discrete sizes and colors
+
+    print(month_std)
+    scatter = sns.scatterplot(
+        data=month_std, 
+        x='month', 
+        y='year', 
+        hue='legend', 
+        palette=["green", "gold", "darkorange","red"],  # Discrete colors
+        hue_order=["SD < 1", "1 < SD < 2", "2 < SD < 3", "SD > 3"],
+        size='size_category',  # Discrete sizes
+        sizes=[50, 100, 200, 500], 
+        alpha=0.5,
+        # picker=True
+    )
+
+    cursor = mplcursors.cursor(hover=True)
+
+    @cursor.connect("add")
+    def on_add(sel):
+        # Allows to see what is in the dictionary of the artist, which corresponds to the scatter
+        print(sel.artist.__dict__)
+
+        sel.artist.set_alpha(0.1)
+        sel.artist.__dict__['_facecolors'][sel.index][3] = 1.
+
+        # This was for the edge color to make it black
+        # sel.artist.__dict__['_edgecolors'] = np.array([[0,0,0,1]])
+    
+        index = sel.index
+        row = month_std.iloc[index]
+        
+        # Set the annotation for the selected point
+        sel.annotation.set(
+            text=f"SD: {round(row['squared_diff'], 2)}\nYear: {row['year']}",
+            multialignment="center",
+        )
+        sel.annotation.arrow_patch.set_visible(False) 
+        sel.annotation.get_bbox_patch().set(fc="white", alpha=.9)
+
+    # @cursor.connect("remove")
+    # def on_remove(sel):
+    #     print("in the remove function")
+    #     sel.artist.set_alpha(0.5)
+
+    handles = [
+        Line2D([0], [0], marker='o', color='w', markerfacecolor=color_labels[i], markersize=10, alpha=0.5,
+            label=f'{legends[i]}')
+        for i in range(len(conditions))
+    ]
+
+    # Place custom legend outside the plot
+    plt.legend(handles=handles, title="Squared Diff Thresholds", bbox_to_anchor=(1.05, 1), loc='upper left', frameon=False,labelspacing=1.5)
+    plt.xticks(range(1, 13), month_labels)
+    plt.tight_layout()
+    plt.show()
 
 
 if "__main__":
     csv_path = csv_path = "cmip6_era5_data_daily_53.csv"
     # make_variation_heatmap_temperature(csv_path)
     # density_plot_tempereature(csv_path)
-    make_variability_month_variability_decade(csv_path)
+    # temperature_trends(csv_path)
+    make_monthly_standard_deviation_over_years(csv_path=csv_path)
